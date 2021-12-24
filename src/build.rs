@@ -1,14 +1,15 @@
 use handlebars::Handlebars;
-use std::{collections::BTreeMap, fs};
+use std::{collections::BTreeMap, fs, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Language {
     title: String,
+    img_url: String,
 }
 
-pub fn build() {
+pub fn build(template_path: PathBuf) {
     // get list of files in working directory
     // and filter out only folders
     let entries = fs::read_dir(".").expect("Can't read current directory");
@@ -21,6 +22,7 @@ pub fn build() {
             if path.is_dir() {
                 languages.push(Language {
                     title: path.to_str().unwrap().to_string(),
+                    img_url: String::from("path/to/image"),
                 });
             }
         }
@@ -31,32 +33,55 @@ pub fn build() {
     // create the output folder
     fs::create_dir_all("www").expect("Could not create output folder 'www'");
 
+    let mut handlebars = Handlebars::new();
+    let index_template_path = {
+        let mut p = template_path.clone();
+        p.push("index.hbs".to_string());
+        p
+    };
+    let base_template_path = {
+        let mut p = template_path.clone();
+        p.push("base.hbs".to_string());
+        p
+    };
+
+    let hbs_base_template = fs::read_to_string(base_template_path).unwrap();
+
+    handlebars
+        .register_template_string("base", hbs_base_template)
+        .unwrap();
+
     // let mut handlebars = Handlebars::new();
-    render_index(languages);
+    render_index(index_template_path, languages, &handlebars);
 }
 
-fn render_index(languages: Vec<Language>) {
+fn render_index(index_template_path: PathBuf, languages: Vec<Language>, handlebars_g: &Handlebars) {
     let mut data: BTreeMap<String, Vec<Language>> = BTreeMap::new();
     data.insert("languages".to_string(), languages);
 
-    // let hbs_index_template = fs::read_to_string("./index.hbs").unwrap();
-    let hbs_index_template: String = r#"
-<html>
-<head<title>Title</title></head>
-<body>
-Test
-<br>
-{{#each languages}}
-{{this.title}}
-{{/each}}
-</body>
-    "#
-    .to_string();
+    let hbs_index_template = fs::read_to_string(&index_template_path).unwrap();
 
-    let mut handlebars = Handlebars::new();
+    println!(
+        "start read string \n{}\nend read string",
+        hbs_index_template
+    );
+
+    let mut handlebars = handlebars_g.clone();
+
     handlebars
         .register_template_string("index", hbs_index_template)
         .unwrap();
 
-    println!("{}", handlebars.render("index", &data).unwrap().to_string());
+    fs::write(
+        {
+            let mut p = PathBuf::new();
+            p.push(".");
+            p.push("www");
+            p.push("index");
+            p.set_extension("html");
+            p
+        },
+        handlebars.render("index", &data).unwrap().to_string(),
+    )
+    .unwrap();
 }
