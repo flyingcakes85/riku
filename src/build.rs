@@ -30,50 +30,45 @@ pub fn build(
 
     let mut languages: Vec<Language> = vec![];
 
-    for entry in entries {
-        if let Ok(entry) = entry {
-            let path = entry.path();
-            if path.is_dir() && !path.clone().to_str().unwrap().contains(".git") {
-                languages.push(Language {
-                    // don't have pound symbol in urls
-                    title: path.file_name().unwrap().to_str().unwrap().to_string(),
-                    img_url: {
-                        let mut folder_path = PathBuf::new();
-                        folder_path.push(".");
-                        folder_path.push(path.clone());
-                        let i = fs::read_dir(path).unwrap();
-                        let mut r: String = String::new();
-                        for img in i {
-                            if let Ok(img) = img {
-                                if img.path().is_file() {
-                                    r = img
-                                        .path()
-                                        .file_name()
-                                        .unwrap()
-                                        .to_str()
-                                        .unwrap()
-                                        .to_string();
-                                    break;
-                                }
-                            }
-                        }
-                        gen_small_img_url(
-                            &img_small_base_url,
-                            &entry
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() && !path.clone().to_str().unwrap().contains(".git") {
+            languages.push(Language {
+                // don't have pound symbol in urls
+                title: path.file_name().unwrap().to_str().unwrap().to_string(),
+                img_url: {
+                    let mut folder_path = PathBuf::new();
+                    folder_path.push(".");
+                    folder_path.push(path.clone());
+                    let i = fs::read_dir(path).unwrap();
+                    let mut r: String = String::new();
+                    for img in i.flatten() {
+                        if img.path().is_file() {
+                            r = img
                                 .path()
                                 .file_name()
                                 .unwrap()
                                 .to_str()
                                 .unwrap()
-                                .to_string(),
-                            &r,
-                        )
-                    },
-                });
-            }
+                                .to_string();
+                            break;
+                        }
+                    }
+                    gen_small_img_url(
+                        &img_small_base_url,
+                        &entry
+                            .path()
+                            .file_name()
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .to_string(),
+                        &r,
+                    )
+                },
+            });
         }
     }
-    println!("languages {:#?}", languages);
     // languages now has folders, i.e. languages >_<
 
     // create the output folder
@@ -94,13 +89,10 @@ pub fn build(
         p
     };
     let base_template_path = {
-        let mut p = template_path.clone();
+        let mut p = template_path;
         p.push("base.hbs".to_string());
         p
     };
-
-    println!("{:?}", template_path);
-    println!("{:#?}", base_template_path);
 
     // register base template
     let hbs_base_template = fs::read_to_string(base_template_path).unwrap();
@@ -116,7 +108,6 @@ pub fn build(
         &handlebars,
         &output_folder,
         &img_url_base,
-        &img_small_base_url,
         img_width,
     );
     // render the index page
@@ -125,11 +116,10 @@ pub fn build(
 
 fn render_gallery(
     gallery_template_path: PathBuf,
-    languages: &Vec<Language>,
+    languages: &[Language],
     handlebars_g: &Handlebars,
-    output_folder: &String,
-    img_url_base: &String,
-    img_small_base_url: &String,
+    output_folder: &str,
+    img_url_base: &str,
     img_width: u32,
 ) {
     let mut data: BTreeMap<String, Json> = BTreeMap::new();
@@ -158,33 +148,20 @@ fn render_gallery(
         let entries = fs::read_dir(format!("{}/{}", ".", language.title.clone()))
             .expect("Can't read current directory");
 
-        for entry in entries {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-                if path.is_file() {
-                    println!("{:?}", path);
-                    let img = image::open(&path).unwrap();
-                    let img = img.resize(
-                        img_width,
-                        img.height() * img_width / img.width(),
-                        image::imageops::Gaussian,
-                    );
-                    println!(
-                        "saving {}",
-                        gen_small_img_url(
-                            &output_folder,
-                            &language.title,
-                            &path
-                                .clone()
-                                .file_name()
-                                .unwrap()
-                                .to_str()
-                                .unwrap()
-                                .to_string(),
-                        )
-                    );
-                    img.save(gen_small_img_url(
-                        &output_folder,
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                println!("{:?}", path);
+                let img = image::open(&path).unwrap();
+                let img = img.resize(
+                    img_width,
+                    img.height() * img_width / img.width(),
+                    image::imageops::Gaussian,
+                );
+                println!(
+                    "saving {}",
+                    gen_small_img_url(
+                        output_folder,
                         &language.title,
                         &path
                             .clone()
@@ -193,35 +170,46 @@ fn render_gallery(
                             .to_str()
                             .unwrap()
                             .to_string(),
-                    ))
-                    .unwrap();
+                    )
+                );
+                img.save(gen_small_img_url(
+                    output_folder,
+                    &language.title,
+                    &path
+                        .clone()
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .to_string(),
+                ))
+                .unwrap();
 
-                    pictures.push(Picture {
-                        title: path.file_name().unwrap().to_str().unwrap().to_string(),
-                        img_url: gen_img_url(
-                            &img_url_base,
-                            &language.title,
-                            &path
-                                .clone()
-                                .file_name()
-                                .unwrap()
-                                .to_str()
-                                .unwrap()
-                                .to_string(),
-                        ),
-                        img_small_url: format!(
-                            "{}/s{}",
-                            &language.title,
-                            &path
-                                .clone()
-                                .file_name()
-                                .unwrap()
-                                .to_str()
-                                .unwrap()
-                                .to_string()
-                        ),
-                    });
-                }
+                pictures.push(Picture {
+                    title: path.file_name().unwrap().to_str().unwrap().to_string(),
+                    img_url: gen_img_url(
+                        img_url_base,
+                        &language.title,
+                        &path
+                            .clone()
+                            .file_name()
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .to_string(),
+                    ),
+                    img_small_url: format!(
+                        "{}/s{}",
+                        &language.title,
+                        &path
+                            .clone()
+                            .file_name()
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .to_string()
+                    ),
+                });
             }
         }
 
@@ -245,12 +233,12 @@ fn render_gallery(
 
 fn render_index(
     index_template_path: PathBuf,
-    languages: &Vec<Language>,
+    languages: &[Language],
     handlebars_g: &Handlebars,
-    output_folder: &String,
+    output_folder: &str,
 ) {
     let mut data: BTreeMap<String, Vec<Language>> = BTreeMap::new();
-    data.insert("languages".to_string(), languages.clone().to_vec());
+    data.insert("languages".to_string(), languages.to_vec());
 
     let hbs_index_template = fs::read_to_string(&index_template_path).unwrap();
 
@@ -269,15 +257,15 @@ fn render_index(
             p.set_extension("html");
             p
         },
-        handlebars.render("index", &data).unwrap().to_string(),
+        handlebars.render("index", &data).unwrap(),
     )
     .unwrap();
 }
 
-fn gen_img_url(base: &String, language: &String, img_name: &String) -> String {
+fn gen_img_url(base: &str, language: &str, img_name: &str) -> String {
     format!("{}/{}/{}", base, language, img_name)
 }
 
-fn gen_small_img_url(base: &String, language: &String, img_name: &String) -> String {
+fn gen_small_img_url(base: &str, language: &str, img_name: &str) -> String {
     format!("{}/{}/s{}", base, language, img_name)
 }
