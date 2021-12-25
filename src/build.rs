@@ -28,8 +28,40 @@ pub fn build(template_path: PathBuf) {
             let path = entry.path();
             if path.is_dir() && !path.clone().to_str().unwrap().contains(".git") {
                 languages.push(Language {
-                    title: path.to_str().unwrap().to_string(),
-                    img_url: String::from("path/to/image"),
+                    // don't have pound symbol in urls
+                    title: path.file_name().unwrap().to_str().unwrap().to_string(),
+                    img_url: {
+                        let mut folder_path = PathBuf::new();
+                        folder_path.push(".");
+                        folder_path.push(path.clone());
+                        let i = fs::read_dir(path).unwrap();
+                        let mut r: String = String::new();
+                        for img in i {
+                            if let Ok(img) = img {
+                                if img.path().is_file() {
+                                    r = img
+                                        .path()
+                                        .file_name()
+                                        .unwrap()
+                                        .to_str()
+                                        .unwrap()
+                                        .to_string();
+                                    break;
+                                }
+                            }
+                        }
+                        gen_small_img_url(
+                            &"base".to_string(),
+                            &entry
+                                .path()
+                                .file_name()
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .to_string(),
+                            &r,
+                        )
+                    },
                 });
             }
         }
@@ -40,7 +72,10 @@ pub fn build(template_path: PathBuf) {
     // create the output folder
     fs::create_dir_all("www").expect("Could not create output folder 'www'");
 
+    // a handlebars instance to be passed around
     let mut handlebars = Handlebars::new();
+
+    // build template paths from folder name
     let index_template_path = {
         let mut p = template_path.clone();
         p.push("index.hbs".to_string());
@@ -57,14 +92,17 @@ pub fn build(template_path: PathBuf) {
         p
     };
 
+    // register base template
     let hbs_base_template = fs::read_to_string(base_template_path).unwrap();
 
     handlebars
         .register_template_string("base", hbs_base_template)
         .unwrap();
 
-    render_index(index_template_path, &languages, &handlebars);
+    // render gallery for each language
     render_gallery(gallery_template_path, &languages, &handlebars);
+    // render the index page
+    render_index(index_template_path, &languages, &handlebars);
 }
 
 fn render_gallery(
@@ -96,6 +134,7 @@ fn render_gallery(
     for language in languages {
         let mut pictures: Vec<Picture> = vec![];
 
+        println!("language : {}", language.title);
         let entries = fs::read_dir(format!("{}/{}", ".", language.title.clone()))
             .expect("Can't read current directory");
 
@@ -105,17 +144,27 @@ fn render_gallery(
                 if path.is_file() {
                     pictures.push(Picture {
                         title: path.to_str().unwrap().to_string(),
-                        img_url: format!(
-                            "{}{}/{}",
-                            img_url_base,
+                        img_url: gen_img_url(
+                            &img_url_base,
                             &language.title,
-                            path.clone().file_name().unwrap().to_str().unwrap()
+                            &path
+                                .clone()
+                                .file_name()
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .to_string(),
                         ),
-                        img_small_url: format!(
-                            "{}{}/{}",
-                            img_url_base,
+                        img_small_url: gen_small_img_url(
+                            &img_url_base,
                             &language.title,
-                            path.clone().file_name().unwrap().to_str().unwrap()
+                            &path
+                                .clone()
+                                .file_name()
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .to_string(),
                         ),
                     });
                 }
@@ -167,4 +216,13 @@ fn render_index(
         handlebars.render("index", &data).unwrap().to_string(),
     )
     .unwrap();
+}
+
+fn gen_img_url(base: &String, language: &String, img_name: &String) -> String {
+    format!("{}{}/{}", base, language, img_name)
+}
+
+fn gen_small_img_url(base: &String, language: &String, img_name: &String) -> String {
+    println!("file name {}", &img_name);
+    format!("{}{}/s{}", base, language, img_name)
 }
