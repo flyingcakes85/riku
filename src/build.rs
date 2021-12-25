@@ -1,4 +1,5 @@
 use handlebars::Handlebars;
+use image::{self, GenericImageView};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::{collections::BTreeMap, fs, path::PathBuf};
@@ -16,7 +17,13 @@ struct Picture {
     img_url: String,
 }
 
-pub fn build(template_path: PathBuf) {
+pub fn build(
+    template_path: PathBuf,
+    img_width: u32,
+    img_url_base: String,
+    img_small_base_url: String,
+    output_folder: String,
+) {
     // get list of files in working directory
     // and filter out only folders
     let entries = fs::read_dir(".").expect("Can't read current directory");
@@ -51,7 +58,7 @@ pub fn build(template_path: PathBuf) {
                             }
                         }
                         gen_small_img_url(
-                            &"base".to_string(),
+                            &img_small_base_url,
                             &entry
                                 .path()
                                 .file_name()
@@ -66,11 +73,11 @@ pub fn build(template_path: PathBuf) {
             }
         }
     }
-
+    println!("languages {:#?}", languages);
     // languages now has folders, i.e. languages >_<
 
     // create the output folder
-    fs::create_dir_all("www").expect("Could not create output folder 'www'");
+    fs::create_dir_all(&output_folder).expect("Could not create output folder");
 
     // a handlebars instance to be passed around
     let mut handlebars = Handlebars::new();
@@ -92,6 +99,9 @@ pub fn build(template_path: PathBuf) {
         p
     };
 
+    println!("{:?}", template_path);
+    println!("{:#?}", base_template_path);
+
     // register base template
     let hbs_base_template = fs::read_to_string(base_template_path).unwrap();
 
@@ -100,15 +110,27 @@ pub fn build(template_path: PathBuf) {
         .unwrap();
 
     // render gallery for each language
-    render_gallery(gallery_template_path, &languages, &handlebars);
+    render_gallery(
+        gallery_template_path,
+        &languages,
+        &handlebars,
+        &output_folder,
+        &img_url_base,
+        &img_small_base_url,
+        img_width,
+    );
     // render the index page
-    render_index(index_template_path, &languages, &handlebars);
+    render_index(index_template_path, &languages, &handlebars, &output_folder);
 }
 
 fn render_gallery(
     gallery_template_path: PathBuf,
     languages: &Vec<Language>,
     handlebars_g: &Handlebars,
+    output_folder: &String,
+    img_url_base: &String,
+    img_small_base_url: &String,
+    img_width: u32,
 ) {
     let mut data: BTreeMap<String, Json> = BTreeMap::new();
 
@@ -123,15 +145,13 @@ fn render_gallery(
         h
     };
 
-    let mut output_path = PathBuf::new();
-    output_path.push(".");
-    output_path.push("www");
-
-    let img_url_base: String =
-        "https://raw.githubusercontent.com/cat-milk/Anime-Girls-Holding-Programming-Books/master/"
-            .to_string();
-
     for language in languages {
+        let mut lang_path = PathBuf::new();
+        lang_path.push(".");
+        lang_path.push(&output_folder);
+        lang_path.push(&language.title);
+        fs::create_dir_all(lang_path).unwrap();
+
         let mut pictures: Vec<Picture> = vec![];
 
         println!("language : {}", language.title);
@@ -142,8 +162,42 @@ fn render_gallery(
             if let Ok(entry) = entry {
                 let path = entry.path();
                 if path.is_file() {
+                    println!("{:?}", path);
+                    let img = image::open(&path).unwrap();
+                    let img = img.resize(
+                        img_width,
+                        img.height() * img_width / img.width(),
+                        image::imageops::Gaussian,
+                    );
+                    println!(
+                        "saving {}",
+                        gen_small_img_url(
+                            &output_folder,
+                            &language.title,
+                            &path
+                                .clone()
+                                .file_name()
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .to_string(),
+                        )
+                    );
+                    img.save(gen_small_img_url(
+                        &output_folder,
+                        &language.title,
+                        &path
+                            .clone()
+                            .file_name()
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .to_string(),
+                    ))
+                    .unwrap();
+
                     pictures.push(Picture {
-                        title: path.to_str().unwrap().to_string(),
+                        title: path.file_name().unwrap().to_str().unwrap().to_string(),
                         img_url: gen_img_url(
                             &img_url_base,
                             &language.title,
@@ -155,8 +209,8 @@ fn render_gallery(
                                 .unwrap()
                                 .to_string(),
                         ),
-                        img_small_url: gen_small_img_url(
-                            &img_url_base,
+                        img_small_url: format!(
+                            "{}/s{}",
                             &language.title,
                             &path
                                 .clone()
@@ -164,7 +218,7 @@ fn render_gallery(
                                 .unwrap()
                                 .to_str()
                                 .unwrap()
-                                .to_string(),
+                                .to_string()
                         ),
                     });
                 }
@@ -176,15 +230,16 @@ fn render_gallery(
             handlebars::to_json(language.title.clone()),
         );
         data.insert("pictures".to_string(), handlebars::to_json(&pictures));
-        output_path.push(&language.title);
-        output_path.set_extension("html");
+        let mut output_file = PathBuf::from(&output_folder);
+        output_file.push(&language.title);
+        output_file.set_extension("html");
 
         fs::write(
-            &output_path,
+            &output_file,
             handlebars.render("gallery", &data).unwrap().to_string(),
         )
         .unwrap();
-        output_path.pop();
+        output_file.pop();
     }
 }
 
@@ -192,6 +247,7 @@ fn render_index(
     index_template_path: PathBuf,
     languages: &Vec<Language>,
     handlebars_g: &Handlebars,
+    output_folder: &String,
 ) {
     let mut data: BTreeMap<String, Vec<Language>> = BTreeMap::new();
     data.insert("languages".to_string(), languages.clone().to_vec());
@@ -208,7 +264,7 @@ fn render_index(
         {
             let mut p = PathBuf::new();
             p.push(".");
-            p.push("www");
+            p.push(output_folder);
             p.push("index");
             p.set_extension("html");
             p
@@ -219,10 +275,9 @@ fn render_index(
 }
 
 fn gen_img_url(base: &String, language: &String, img_name: &String) -> String {
-    format!("{}{}/{}", base, language, img_name)
+    format!("{}/{}/{}", base, language, img_name)
 }
 
 fn gen_small_img_url(base: &String, language: &String, img_name: &String) -> String {
-    println!("file name {}", &img_name);
-    format!("{}{}/s{}", base, language, img_name)
+    format!("{}/{}/s{}", base, language, img_name)
 }
