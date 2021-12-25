@@ -26,7 +26,7 @@ pub fn build(template_path: PathBuf) {
     for entry in entries {
         if let Ok(entry) = entry {
             let path = entry.path();
-            if path.is_dir() {
+            if path.is_dir() && !path.clone().to_str().unwrap().contains(".git") {
                 languages.push(Language {
                     title: path.to_str().unwrap().to_string(),
                     img_url: String::from("path/to/image"),
