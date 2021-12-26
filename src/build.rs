@@ -152,7 +152,11 @@ fn render_gallery(
             let path = entry.path();
             if path.is_file() {
                 println!("{:?}", path);
-                let img = image::open(&path).unwrap();
+                let img = image::open(&path);
+                if img.is_err() {
+                    continue;
+                }
+                let img = img.unwrap();
                 let img = img.resize(
                     img_width,
                     img.height() * img_width / img.width(),
@@ -172,7 +176,7 @@ fn render_gallery(
                             .to_string(),
                     )
                 );
-                img.save(gen_small_img_url(
+                let img_save_res = img.save(gen_small_img_url(
                     output_folder,
                     &language.title,
                     &path
@@ -182,8 +186,11 @@ fn render_gallery(
                         .to_str()
                         .unwrap()
                         .to_string(),
-                ))
-                .unwrap();
+                ));
+
+                if img_save_res.is_err() {
+                    continue;
+                }
 
                 pictures.push(Picture {
                     title: path.file_name().unwrap().to_str().unwrap().to_string(),
